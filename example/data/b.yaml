@@ -1,0 +1,17 @@
+# LINT.IfChange
+a1: 1
+a2: 2
+a3: 3
+a4: "LINT.IfChange" # Please be ignored...
+# LINT.ThenChange(/data/a.yaml)
+
+# LINT.IfChange(b)
+b2: 2
+b3: 3
+# LINT.ThenChange(a.yaml:a)
+
+# LINT.IfChange(c)
+c1: 1
+c2: 2
+c3: 3
+# LINT.ThenChange(:b)

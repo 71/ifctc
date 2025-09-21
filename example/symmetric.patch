@@ -1,0 +1,29 @@
+diff --git a/data/a.yaml b/data/a.yaml
+index ac7ea296b4..bc157877ea 100644
+--- a/data/a.yaml
++++ b/data/a.yaml
+@@ -1,12 +1,10 @@
+ # LINT.IfChange(a)
+-a1: 1
+ a2: 2
+ a3: 3
+ a4: "LINT.IfChange" # Please be ignored...
+ # LINT.ThenChange(b.yaml:b)
+ 
+ # LINT.IfChange
+-b1: 1
+ b2: 2
+ b3: 3
+ # LINT.ThenChange(b.yaml, :a)
+diff --git a/data/b.yaml b/data/b.yaml
+index 5174023de3..375b497f2c 100644
+--- a/data/b.yaml
++++ b/data/b.yaml
+@@ -6,7 +6,6 @@
+ # LINT.ThenChange(/data/a.yaml)
+ 
+ # LINT.IfChange(b)
+-b1: 1
+ b2: 2
+ b3: 3
+ # LINT.ThenChange(a.yaml:a)
