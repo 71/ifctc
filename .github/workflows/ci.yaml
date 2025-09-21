@@ -1,0 +1,66 @@
+name: Continuous integration
+
+on:
+  push:
+    branches: [ main ]
+  pull_request: {}
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: mlugg/setup-zig@8d6198c65fb0feaa111df26e6b467fea8345e46f
+        with:
+          version: 0.15.1
+
+      - name: Check format
+        run: zig fmt --check .
+
+      - name: Build and test
+        run: zig build test
+
+  release:
+    name: Release
+    needs: check
+    if: github.event_name == 'push'
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Get version
+        id: get-version
+        run: |
+          version=v$(sed -En 's/ +\.version = \"([0-9.]+)\",/\1/p' build.zig.zon)
+          create_release=$(git ls-remote --exit-code --tags origin $version && echo false || echo true)
+
+          echo version=$version >> "$GITHUB_OUTPUT"
+          echo create-release=$create_release >> "$GITHUB_OUTPUT"
+
+      - uses: mlugg/setup-zig@8d6198c65fb0feaa111df26e6b467fea8345e46f
+        if: steps.get-version.outputs.create-release == 'true'
+        with:
+          version: 0.15.1
+
+      - name: Build all for release
+        if: steps.get-version.outputs.create-release == 'true'
+        run: zig build all
+
+      - name: Create release
+        if: steps.get-version.outputs.create-release == 'true'
+        run: |
+          gh release create $tag \
+            zig-out/bin/ifctc-* \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes "ifctc $tag"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.get-version.outputs.version }}

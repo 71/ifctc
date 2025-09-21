@@ -1,0 +1,10 @@
+diff --git a/data/b.yaml b/data/b.yaml
+index cbe60466f6..f9807c8777 100644
+--- a/data/b.yaml
++++ b/data/b.yaml
+@@ -1,5 +1,4 @@
+ # LINT.IfChange
+-a1: 1
+ a2: 2
+ a3: 3
+ a4: "LINT.IfChange" # Please be ignored...
