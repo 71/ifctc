@@ -223,6 +223,9 @@ test "self file" {
     );
 }
 
+// -------------------------------------------------------------------------------------------------
+// MARK: Helpers
+
 fn expectDiagnostics(
     expected: []const Analysis.File,
     diff: []const u8,

@@ -160,6 +160,25 @@ test "no newline at end of file" {
         \\+test.patch
         \\\ No newline at end of file
     );
+
+    try expectDiff(&[_]ChangeSet.File{
+        .{
+            .path = "a",
+            .status = .{
+                .modified_ranges = &[_][2]u32{
+                    .{ 1, 1 },
+                },
+            },
+        },
+    },
+        \\diff --git a/a b/a
+        \\--- a/a
+        \\+++ b/a
+        \\@@ -1 +1 @@
+        \\-a
+        \\\ No newline at end of file
+        \\+a
+    );
 }
 
 test "tricky new names" {

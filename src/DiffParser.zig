@@ -218,11 +218,8 @@ fn parseLine(self: *DiffParser, line: *[]const u8, is_full_line: bool) Error!?Fi
                 // We could be finishing a file with no terminating newline.
                 @branchHint(.unlikely);
 
-                const no_newline_message = "\\ No newline at end of file";
-
-                if (prefix.len <= no_newline_message.len and
-                    std.mem.startsWith(u8, no_newline_message, prefix))
-                {
+                if (prefix.len > 2 and prefix[0] == '\\' and prefix[1] == ' ') {
+                    // `\ No newline at end of file`, which we can ignore.
                     self.skipLine();
                     return result;
                 }
@@ -588,6 +585,11 @@ fn parseLine(self: *DiffParser, line: *[]const u8, is_full_line: bool) Error!?Fi
         },
         .in_new_file_hunk => |*state| {
             if (first_char != '+') {
+                if (first_char == '\\') {
+                    // `\ No newline at end of file`, which we can ignore.
+                    self.skipLine();
+                    return null;
+                }
                 return self.invalidErrorConcat(
                     &[_][]const u8{ "expected addition line in ", state.file_path },
                 );
@@ -608,6 +610,11 @@ fn parseLine(self: *DiffParser, line: *[]const u8, is_full_line: bool) Error!?Fi
         },
         .in_deleted_file_hunk => |*state| {
             if (first_char != '-') {
+                if (first_char == '\\') {
+                    // `\ No newline at end of file`, which we can ignore.
+                    self.skipLine();
+                    return null;
+                }
                 return self.invalidErrorConcat(
                     &[_][]const u8{ "expected deletion line in ", state.file_path },
                 );
@@ -676,6 +683,11 @@ fn parseLine(self: *DiffParser, line: *[]const u8, is_full_line: bool) Error!?Fi
                         }
                         state.remaining_removed_lines -= 1;
                     }
+                },
+                '\\' => {
+                    // `\ No newline at end of file`, which we can ignore.
+                    self.skipLine();
+                    return null;
                 },
                 else => return self.invalidErrorConcat(
                     &[_][]const u8{ "expected context, addition or removal line in ", state.file_path },
