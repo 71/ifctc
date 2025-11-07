@@ -223,6 +223,47 @@ test "self file" {
     );
 }
 
+test "absolute path" {
+    try expectDiagnostics(
+        &[_]Analysis.File{
+            .{
+                .path = "foo/bar",
+                .diagnostics = &[_]Diagnostic{
+                    .{
+                        .line = 3,
+                        .details = .{ .file_not_modified = "baz/quux" },
+                    },
+                },
+            },
+        },
+        \\diff --git a/foo/bar b/foo/bar
+        \\--- a/foo/bar
+        \\+++ b/foo/bar
+        \\@@ -1,3 +1,3 @@
+        \\ # LINT.IfChange
+        \\-a
+        \\+b
+        \\ # LINT.ThenChange(//baz/quux)
+    ,
+        &[_]Dir.InMemoryFile{
+            .{
+                .path = "foo/bar",
+                .contents =
+                \\# LINT.IfChange
+                \\b
+                \\# LINT.ThenChange(//baz/quux)
+                ,
+            },
+            .{
+                .path = "baz/quux",
+                .contents =
+                \\
+                ,
+            },
+        },
+    );
+}
+
 // -------------------------------------------------------------------------------------------------
 // MARK: Helpers
 

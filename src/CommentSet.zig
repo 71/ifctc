@@ -46,10 +46,13 @@ pub fn starts(self: *const CommentSet, buffer: []const u8) ?usize {
     if (buffer.len == 0) return null;
 
     for (self.line_comments) |comment| {
-        if (buffer.len >= comment.len and
-            std.mem.eql(u8, buffer[0..comment.len], comment))
+        // Make sure that the comment is followed by a space character, to avoid
+        // skipping e.g. `//abs/path`.
+        if (buffer.len > comment.len and
+            std.mem.eql(u8, buffer[0..comment.len], comment) and
+            buffer[comment.len] == ' ')
         {
-            return comment.len;
+            return comment.len + 1;
         }
     }
     return null;
