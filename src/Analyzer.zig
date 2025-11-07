@@ -80,11 +80,16 @@ pub const File = struct {
         var result = try allocator.alloc(Diagnostic, len);
         var i: usize = 0;
 
+        errdefer {
+            // Cannot free individual diagnostics.
+            allocator.free(result);
+        }
+
         var iter = self.diagnostics.constIterator();
         while (iter.next()) |diagnostic| {
             if (diagnostic.details == .label_status_not_yet_available) continue;
 
-            result[i] = diagnostic.*;
+            result[i] = try diagnostic.copy(allocator);
             i += 1;
         }
         std.debug.assert(i == len);

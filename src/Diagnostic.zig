@@ -52,6 +52,13 @@ line: u32,
 
 details: Details,
 
+pub fn copy(self: *const Diagnostic, allocator: std.mem.Allocator) error{OutOfMemory}!Diagnostic {
+    return .{
+        .line = self.line,
+        .details = try self.copyDetails(allocator),
+    };
+}
+
 pub fn print(
     self: *const Diagnostic,
     writer: *std.Io.Writer,
@@ -65,6 +72,43 @@ pub fn print(
         try writer.writeAll(": ");
     }
     try self.printDetails(writer, files);
+}
+
+fn copyDetails(self: *const Diagnostic, allocator: std.mem.Allocator) error{OutOfMemory}!Details {
+    var details = self.details;
+
+    switch (details) {
+        .cannot_open,
+        .cannot_read,
+        .invalid_directive,
+        .if_change_follows_if_change,
+        .then_change_follows_then_change,
+        .then_change_without_if_change,
+        .self_file,
+        .file_deleted,
+        .file_renamed_but_not_modified,
+        .binary_file_cannot_have_labels,
+        => {},
+
+        inline .self_label,
+        .duplicate_label,
+        .label_status_not_yet_available,
+        => |*d| {
+            d.label = try allocator.dupe(u8, d.label);
+        },
+
+        inline .invalid_path,
+        .path_escapes_root,
+        .file_not_found,
+        .file_not_modified,
+        .label_does_not_exist,
+        .label_not_modified,
+        => |*path| {
+            path.* = try allocator.dupe(u8, path.*);
+        },
+    }
+
+    return details;
 }
 
 fn printDetails(
