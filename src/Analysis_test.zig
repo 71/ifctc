@@ -264,6 +264,20 @@ test "absolute path" {
     );
 }
 
+test "deleted file" {
+    try expectDiagnostics(
+        &[_]Analysis.File{},
+        \\diff --git a/foo b/foo
+        \\deleted file mode 100644
+        \\--- a/foo
+        \\+++ /dev/null
+        \\@@ -1 +0,0 @@
+        \\-a
+    ,
+        &[_]Dir.InMemoryFile{},
+    );
+}
+
 // -------------------------------------------------------------------------------------------------
 // MARK: Helpers
 

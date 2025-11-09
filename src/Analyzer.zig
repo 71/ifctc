@@ -203,6 +203,11 @@ const Worker = struct {
         const file_path = file.change.path;
         const file_dir_end = std.mem.lastIndexOfScalar(u8, file_path, '/') orelse 0;
 
+        switch (file.change.status) {
+            .binary, .deleted, .renamed_to => return true, // Do not attempt to analyze the file.
+            .new, .modified_lines, .modified_ranges => {},
+        }
+
         self.file = @constCast(file);
         self.file_id = @intCast(index);
 
