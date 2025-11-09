@@ -260,6 +260,18 @@ test "renamed and modified" {
     );
 }
 
+test "binary files" {
+    try expectDiff(&[_]ChangeSet.File{
+        .{
+            .path = "docs/foo.png",
+            .status = .binary,
+        },
+    },
+        \\diff --git a/docs/foo.png b/docs/foo.png
+        \\Binary files a/docs/foo.png and b/docs/foo.png differ
+    );
+}
+
 test "test.patch" {
     // To debug the parser on specific files, add a new `test.patch` file at the root of the
     // repository and run this test.

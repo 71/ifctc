@@ -374,6 +374,16 @@ fn parseLine(self: *DiffParser, line: *[]const u8, is_full_line: bool) Error!?Fi
                 try self.readLineUntilEnd(line, is_full_line) orelse return null;
 
             if (!std.mem.startsWith(u8, full_line, "--- ")) {
+                // We could also be reading a binary file change information.
+                if (std.mem.startsWith(u8, full_line, "Binary ")) {
+                    defer self.state = .expect_header;
+
+                    return .{
+                        .path = state.file_path,
+                        .status = .binary,
+                    };
+                }
+
                 const expected = state.status orelse return self.invalidErrorConcat(
                     &[_][]const u8{ "expected `--- <filename>`, got: ", full_line },
                 );
