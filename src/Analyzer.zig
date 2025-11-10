@@ -57,7 +57,10 @@ pub const File = struct {
                     if (file.labels.get(info.label)) |label| {
                         diagnostic.details = switch (label.status) {
                             .changed => continue,
-                            .unchanged => .{ .label_not_modified = info.label },
+                            .unchanged => if (!info.modified)
+                                continue
+                            else
+                                .{ .label_not_modified = info.label },
                         };
                     } else {
                         diagnostic.details = .{ .label_does_not_exist = info.label };
@@ -203,15 +206,15 @@ const Worker = struct {
         const file_path = file.change.path;
         const file_dir_end = std.mem.lastIndexOfScalar(u8, file_path, '/') orelse 0;
 
-        switch (file.change.status) {
-            .binary, .deleted, .renamed_to => return true, // Do not attempt to analyze the file.
-            .new, .modified_lines, .modified_ranges => {},
-        }
-
         self.file = @constCast(file);
         self.file_id = @intCast(index);
 
         defer self.file.setDone(self);
+
+        switch (file.change.status) {
+            .binary, .deleted, .renamed_to => return true, // Do not attempt to analyze the file.
+            .new, .modified_lines, .modified_ranges => {},
+        }
 
         var file_reader = self.analyzer.root_directory.openFile(file_path) catch |err| {
             try self.addDiagnostic(0, .{ .cannot_open = err });
@@ -244,6 +247,13 @@ const Worker = struct {
 
         if (expect_more) {
             try self.addDiagnostic(0, .invalid_directive);
+        } else {
+            switch (self.last_directive) {
+                .none, .then_change_line => {},
+                .if_change_line => |line| {
+                    try self.addDiagnostic(line, .if_change_without_then_change);
+                },
+            }
         }
         return true;
     }
@@ -321,11 +331,9 @@ const Worker = struct {
             return self.addDiagnostic(start_line, .invalid_directive);
         }
 
-        if (!was_modified) return;
-
         // Check arguments.
         for (directive.args) |path| {
-            try self.checkPathChanged(end_line, path);
+            try self.checkPathChanged(end_line, path, was_modified);
         }
     }
 
@@ -371,6 +379,7 @@ const Worker = struct {
         self: *Worker,
         line: u32,
         path_and_label: []const u8,
+        modified: bool,
     ) error{OutOfMemory}!void {
         // Extract the label out of the path.
         var raw_path = path_and_label;
@@ -392,7 +401,7 @@ const Worker = struct {
         if (raw_path.len == 0) {
             std.debug.assert(label != null and label.?.len > 0);
 
-            return try self.checkFileChanged(line, self.file, label);
+            return try self.checkFileChanged(line, self.file, label, modified);
         }
 
         // Resolve the path.
@@ -403,6 +412,8 @@ const Worker = struct {
         const file = self.analyzer.file_by_path.getAdapted(resolved_path, context) orelse {
             const file_path = try std.mem.concat(self.allocator.allocator(), u8, &resolved_path);
             const file_exists = self.analyzer.root_directory.fileExists(file_path);
+            if (!modified and file_exists) return;
+
             const details: Diagnostic.Details = if (file_exists)
                 .{ .file_not_modified = file_path }
             else
@@ -411,7 +422,7 @@ const Worker = struct {
         };
 
         // Check the file.
-        try self.checkFileChanged(line, file, label);
+        try self.checkFileChanged(line, file, label, modified);
     }
 
     /// Checks whether the given file / label changed, reporting diagnostics as needed.
@@ -420,6 +431,7 @@ const Worker = struct {
         check_line: u32,
         file: *const File,
         given_label: ?[]const u8,
+        modified: bool,
     ) error{OutOfMemory}!void {
         if (file == self.file) {
             // Prevent a `ThenChange` from only depending on changes in its own file / label.
@@ -460,6 +472,8 @@ const Worker = struct {
             },
             .renamed_to => |to_file_id| {
                 current_file_id = to_file_id orelse {
+                    if (!modified) return;
+
                     return self.addDiagnostic(check_line, .{
                         .file_renamed_but_not_modified = file_id,
                     });
@@ -478,6 +492,7 @@ const Worker = struct {
                 .label_status_not_yet_available = .{
                     .file_id = file_id,
                     .label = try self.allocator.allocator().dupe(u8, label_name),
+                    .modified = modified,
                 },
             });
         };
@@ -490,6 +505,8 @@ const Worker = struct {
                 // Success!
             },
             .unchanged => {
+                if (!modified) return;
+
                 return self.addDiagnostic(check_line, .{
                     .label_not_modified = try self.allocator.allocator().dupe(u8, label_name),
                 });

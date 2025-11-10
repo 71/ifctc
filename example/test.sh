@@ -21,6 +21,6 @@ for patch in *.patch; do
   if [ "$update" -eq 1 ]; then
     ("$ifctc" < "$patch" || true) > "$out_file"
   else
-    diff "$out_file" <("$ifctc" < "$patch" || true)
+    diff --unified "$out_file" <("$ifctc" < "$patch" || true)
   fi
 done

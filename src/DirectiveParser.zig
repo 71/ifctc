@@ -317,6 +317,11 @@ fn findLintDirectiveStart(self: *DirectiveParser, buffer: []const u8) ?usize {
             // a directive yet.
             return null;
         }
+        if (buf[lint_start + 4] != '.') {
+            // The "LINT" is not followed by a dot. Keep going.
+            buf = buf[lint_start + 5 ..];
+            continue;
+        }
 
         // The "LINT." is valid!
         const offset = buf.ptr - buffer.ptr;

@@ -17,6 +17,7 @@ pub const Details = union(enum) {
     then_change_follows_then_change: struct {
         then_change_line: u32,
     },
+    if_change_without_then_change,
     then_change_without_if_change,
 
     // Invalid directive contents.
@@ -36,6 +37,7 @@ pub const Details = union(enum) {
     label_status_not_yet_available: struct {
         file_id: u32,
         label: []const u8,
+        modified: bool,
     },
 
     // Missing changes.
@@ -83,6 +85,7 @@ fn copyDetails(self: *const Diagnostic, allocator: std.mem.Allocator) error{OutO
         .invalid_directive,
         .if_change_follows_if_change,
         .then_change_follows_then_change,
+        .if_change_without_then_change,
         .then_change_without_if_change,
         .self_file,
         .file_deleted,
@@ -137,8 +140,11 @@ fn printDetails(
         .then_change_follows_then_change => |d| {
             try writer.print("LINT.ThenChange follows another LINT.ThenChange on line {d}", .{d.then_change_line});
         },
+        .if_change_without_then_change => {
+            try writer.print("LINT.IfChange is not followed by LINT.ThenChange", .{});
+        },
         .then_change_without_if_change => {
-            try writer.print("LINT.ThenChange without preceding LINT.IfChange", .{});
+            try writer.print("LINT.ThenChange does not follow LINT.IfChange", .{});
         },
 
         .self_file => {
