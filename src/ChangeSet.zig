@@ -48,25 +48,27 @@ pub const File = struct {
         }
     }
 
-    pub fn rangeWasModified(self: *const File, start_line: u32, end_line: u32) bool {
+    /// Returns the number of the first line in `[start_line + 1, end_line)` which was modified,
+    /// or null if no line was modified in this range.
+    pub fn firstModifiedLineIn(self: *const File, start_line: u32, end_line: u32) ?u32 {
         return switch (self.status) {
-            .new => true,
-            .binary, .deleted, .renamed_to => false,
-            .modified_lines => |modified_lines| for (start_line..end_line + 1) |line| {
+            .new => start_line + 1,
+            .binary, .deleted, .renamed_to => null,
+            .modified_lines => |modified_lines| for (start_line + 1..end_line) |line| {
                 if (line < modified_lines.bit_length and modified_lines.isSet(line)) {
-                    break true;
+                    break @intCast(line);
                 }
-            } else false,
+            } else null,
             .modified_ranges => |modified_ranges| blk: {
                 const found = std.sort.binarySearch([2]u32, modified_ranges, [2]u32{ start_line, end_line }, struct {
                     fn compare(context: [2]u32, range: [2]u32) std.math.Order {
-                        if (context[1] < range[0]) return .lt;
-                        if (context[0] > range[1]) return .gt;
+                        if (context[1] <= range[0]) return .lt;
+                        if (context[0] >= range[1]) return .gt;
                         return .eq;
                     }
                 }.compare);
 
-                break :blk found != null;
+                break :blk if (found) |index| modified_ranges[index][0] else null;
             },
         };
     }

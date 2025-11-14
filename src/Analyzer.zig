@@ -55,13 +55,15 @@ pub const File = struct {
                     const file = &files[info.file_id];
 
                     if (file.labels.get(info.label)) |label| {
-                        diagnostic.details = switch (label.status) {
+                        switch (label.status) {
                             .changed => continue,
-                            .unchanged => if (!info.modified)
-                                continue
-                            else
-                                .{ .label_not_modified = info.label },
-                        };
+                            .unchanged => if (info.changed_line) |changed_line| {
+                                diagnostic.details = .{
+                                    .label_not_modified = .{ .label = info.label, .then_change_line = diagnostic.line },
+                                };
+                                diagnostic.line = changed_line;
+                            } else continue,
+                        }
                     } else {
                         diagnostic.details = .{ .label_does_not_exist = info.label };
                     }
@@ -318,13 +320,13 @@ const Worker = struct {
         end_line: u32,
         directive: *const DirectiveParser.ParsedDirective,
     ) error{OutOfMemory}!void {
-        const was_modified = self.file.change.rangeWasModified(start_line, end_line - 1);
+        const modified_line = self.file.change.firstModifiedLineIn(start_line, end_line);
 
         const label = self.if_change_label.items;
         defer self.if_change_label.clearRetainingCapacity();
 
         if (label.len > 0) {
-            try self.markLabelChanged(label, start_line, was_modified);
+            try self.markLabelChanged(label, start_line, modified_line != null);
         }
 
         if (directive.args.len == 0) {
@@ -333,7 +335,7 @@ const Worker = struct {
 
         // Check arguments.
         for (directive.args) |path| {
-            try self.checkPathChanged(end_line, path, was_modified);
+            try self.checkPathChanged(modified_line, end_line, path);
         }
     }
 
@@ -377,9 +379,9 @@ const Worker = struct {
     /// Checks whether the file at the given path changed, reporting diagnostics as needed.
     fn checkPathChanged(
         self: *Worker,
-        line: u32,
+        changed_line: ?u32,
+        then_change_line: u32,
         path_and_label: []const u8,
-        modified: bool,
     ) error{OutOfMemory}!void {
         // Extract the label out of the path.
         var raw_path = path_and_label;
@@ -387,7 +389,7 @@ const Worker = struct {
 
         if (std.mem.lastIndexOfAny(u8, path_and_label, "/:")) |index| {
             if (index == path_and_label.len - 1) {
-                return self.addDiagnostic(line, .{
+                return self.addDiagnostic(then_change_line, .{
                     .invalid_path = try self.allocator.allocator().dupe(u8, path_and_label),
                 });
             }
@@ -401,48 +403,50 @@ const Worker = struct {
         if (raw_path.len == 0) {
             std.debug.assert(label != null and label.?.len > 0);
 
-            return try self.checkFileChanged(line, self.file, label, modified);
+            return try self.checkFileChanged(changed_line, then_change_line, self.file, label);
         }
 
         // Resolve the path.
-        const resolved_path = try self.resolvePath(raw_path, line) orelse return;
+        const resolved_path = try self.resolvePath(raw_path, then_change_line) orelse return;
         const context: ConcatStringContext = .{};
 
         // Find the corresponding file.
         const file = self.analyzer.file_by_path.getAdapted(resolved_path, context) orelse {
             const file_path = try std.mem.concat(self.allocator.allocator(), u8, &resolved_path);
             const file_exists = self.analyzer.root_directory.fileExists(file_path);
-            if (!modified and file_exists) return;
+            if (changed_line == null and file_exists) return;
 
             const details: Diagnostic.Details = if (file_exists)
-                .{ .file_not_modified = file_path }
+                .{
+                    .file_not_modified = .{ .path = file_path, .then_change_line = then_change_line },
+                }
             else
                 .{ .file_not_found = file_path };
-            return self.addDiagnostic(line, details);
+            return self.addDiagnostic(changed_line orelse then_change_line, details);
         };
 
         // Check the file.
-        try self.checkFileChanged(line, file, label, modified);
+        try self.checkFileChanged(changed_line, then_change_line, file, label);
     }
 
     /// Checks whether the given file / label changed, reporting diagnostics as needed.
     fn checkFileChanged(
         self: *Worker,
-        check_line: u32,
+        changed_line: ?u32,
+        then_change_line: u32,
         file: *const File,
         given_label: ?[]const u8,
-        modified: bool,
     ) error{OutOfMemory}!void {
         if (file == self.file) {
             // Prevent a `ThenChange` from only depending on changes in its own file / label.
             if (given_label) |label| {
                 if (std.mem.eql(u8, self.if_change_label.items, label)) {
-                    return self.addDiagnostic(check_line, .{
+                    return self.addDiagnostic(then_change_line, .{
                         .self_label = .{ .label = try self.allocator.allocator().dupe(u8, label) },
                     });
                 }
             } else {
-                return self.addDiagnostic(check_line, .self_file);
+                return self.addDiagnostic(then_change_line, .self_file);
             }
         }
 
@@ -459,23 +463,27 @@ const Worker = struct {
                 if (given_label == null) {
                     return;
                 }
-                return self.addDiagnostic(check_line, .{
+                return self.addDiagnostic(then_change_line, .{
                     .binary_file_cannot_have_labels = file_id,
                 });
             },
             .deleted => {
                 // If the file was deleted, we report an error (as the user likely needs to update
                 // the LINT directive).
-                return self.addDiagnostic(check_line, .{
-                    .file_deleted = file_id,
+                return self.addDiagnostic(changed_line orelse then_change_line, .{
+                    .file_deleted = .{
+                        .file_id = file_id,
+                        .then_change_line = then_change_line,
+                    },
                 });
             },
             .renamed_to => |to_file_id| {
                 current_file_id = to_file_id orelse {
-                    if (!modified) return;
-
-                    return self.addDiagnostic(check_line, .{
-                        .file_renamed_but_not_modified = file_id,
+                    return self.addDiagnostic(changed_line orelse return, .{
+                        .file_renamed_but_not_modified = .{
+                            .file_id = file_id,
+                            .then_change_line = then_change_line,
+                        },
                     });
                 };
                 continue :sw self.analyzer.files[current_file_id].change.status;
@@ -488,15 +496,15 @@ const Worker = struct {
         const labels = file.labelsIfDone() orelse {
             // If labels are not available yet, we report a diagnostic we'll ignore when time comes
             // to report them.
-            return self.addDiagnostic(check_line, .{
+            return self.addDiagnostic(then_change_line, .{
                 .label_status_not_yet_available = .{
                     .file_id = file_id,
                     .label = try self.allocator.allocator().dupe(u8, label_name),
-                    .modified = modified,
+                    .changed_line = changed_line,
                 },
             });
         };
-        const label = labels.get(label_name) orelse return self.addDiagnostic(check_line, .{
+        const label = labels.get(label_name) orelse return self.addDiagnostic(then_change_line, .{
             .label_does_not_exist = try self.allocator.allocator().dupe(u8, label_name),
         });
 
@@ -505,10 +513,11 @@ const Worker = struct {
                 // Success!
             },
             .unchanged => {
-                if (!modified) return;
-
-                return self.addDiagnostic(check_line, .{
-                    .label_not_modified = try self.allocator.allocator().dupe(u8, label_name),
+                return self.addDiagnostic(changed_line orelse return, .{
+                    .label_not_modified = .{
+                        .label = try self.allocator.allocator().dupe(u8, label_name),
+                        .then_change_line = then_change_line,
+                    },
                 });
             },
         }

@@ -53,8 +53,10 @@ test Analysis {
                 .path = "constants.rs",
                 .diagnostics = &[_]Diagnostic{
                     .{
-                        .line = 3,
-                        .details = .{ .file_not_modified = "constants.py" },
+                        .line = 2,
+                        .details = .{
+                            .file_not_modified = .{ .path = "constants.py", .then_change_line = 3 },
+                        },
                     },
                 },
             },
@@ -230,8 +232,10 @@ test "absolute path" {
                 .path = "foo/bar",
                 .diagnostics = &[_]Diagnostic{
                     .{
-                        .line = 3,
-                        .details = .{ .file_not_modified = "baz/quux" },
+                        .line = 2,
+                        .details = .{
+                            .file_not_modified = .{ .path = "baz/quux", .then_change_line = 3 },
+                        },
                     },
                 },
             },

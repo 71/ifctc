@@ -37,19 +37,38 @@ pub const Details = union(enum) {
     label_status_not_yet_available: struct {
         file_id: u32,
         label: []const u8,
-        modified: bool,
+        changed_line: ?u32,
     },
 
     // Missing changes.
-    file_not_modified: []const u8,
-    file_deleted: u32,
-    file_renamed_but_not_modified: u32,
+    file_not_modified: struct {
+        path: []const u8,
+        then_change_line: u32,
+    },
+    file_deleted: struct {
+        file_id: u32,
+        then_change_line: u32,
+    },
+    file_renamed_but_not_modified: struct {
+        file_id: u32,
+        then_change_line: u32,
+    },
     label_does_not_exist: []const u8,
-    label_not_modified: []const u8,
+    label_not_modified: struct {
+        label: []const u8,
+        then_change_line: u32,
+    },
     binary_file_cannot_have_labels: u32,
 };
 
 /// The line where the diagnostic begins, or 0 if the whole file is concerned.
+///
+/// For diagnostics related to a missing change (wrt. a LINT.IfChange block), `line` points to the
+/// modified line, and `then_change_line` points to the LINT.ThenChange line.
+///
+/// We prefer showing the modified line, rather than the `then_change_line`, since the
+/// LINT.ThenChange line might be far from the modified line, and may be omitted from the diff
+/// shown to the user.
 line: u32,
 
 details: Details,
@@ -96,6 +115,7 @@ fn copyDetails(self: *const Diagnostic, allocator: std.mem.Allocator) error{OutO
         inline .self_label,
         .duplicate_label,
         .label_status_not_yet_available,
+        .label_not_modified,
         => |*d| {
             d.label = try allocator.dupe(u8, d.label);
         },
@@ -103,11 +123,14 @@ fn copyDetails(self: *const Diagnostic, allocator: std.mem.Allocator) error{OutO
         inline .invalid_path,
         .path_escapes_root,
         .file_not_found,
-        .file_not_modified,
         .label_does_not_exist,
-        .label_not_modified,
         => |*path| {
             path.* = try allocator.dupe(u8, path.*);
+        },
+
+        inline .file_not_modified,
+        => |*d| {
+            d.path = try allocator.dupe(u8, d.path);
         },
     }
 
@@ -166,20 +189,20 @@ fn printDetails(
             try writer.print("file not found: {s}", .{path});
         },
 
-        .file_not_modified => |path| {
-            try writer.print("file was not modified: {s}", .{path});
+        .file_not_modified => |d| {
+            try writer.print("file was not modified: {s}", .{d.path});
         },
-        .file_deleted => |file_id| {
-            try writer.print("file was deleted: {s}", .{files[file_id].path});
+        .file_deleted => |d| {
+            try writer.print("file was deleted: {s}", .{files[d.file_id].path});
         },
-        .file_renamed_but_not_modified => |file_id| {
-            try writer.print("file was renamed but not modified: {s}", .{files[file_id].path});
+        .file_renamed_but_not_modified => |d| {
+            try writer.print("file was renamed but not modified: {s}", .{files[d.file_id].path});
         },
         .label_does_not_exist => |label| {
             try writer.print("label \"{s}\" does not exist", .{label});
         },
-        .label_not_modified => |label| {
-            try writer.print("code block with label \"{s}\" not modified", .{label});
+        .label_not_modified => |d| {
+            try writer.print("code block with label \"{s}\" not modified", .{d.label});
         },
         .binary_file_cannot_have_labels => |file_id| {
             try writer.print("binary file cannot have labels: {s}", .{files[file_id].path});
