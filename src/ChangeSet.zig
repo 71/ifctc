@@ -28,7 +28,8 @@ pub const File = struct {
 
         /// The file was modified, and modified lines are stored as a dense bit set.
         modified_lines: std.bit_set.DynamicBitSetUnmanaged,
-        /// The file was modified, and modified lines are stored as an ordered slice of ranges.
+        /// The file was modified, and modified lines are stored as an ordered slice of (inclusive)
+        /// ranges.
         modified_ranges: []const [2]u32,
     },
 
@@ -48,29 +49,120 @@ pub const File = struct {
         }
     }
 
-    /// Returns the number of the first line in `[start_line + 1, end_line)` which was modified,
-    /// or null if no line was modified in this range.
+    /// Finds the number of the first line in `[start_line, end_line]` which was modified, and
+    /// returns it if a line was also modified in `[start_line + 1, end_line - 1]`.
     pub fn firstModifiedLineIn(self: *const File, start_line: u32, end_line: u32) ?u32 {
-        return switch (self.status) {
-            .new => start_line + 1,
-            .binary, .deleted, .renamed_to => null,
-            .modified_lines => |modified_lines| for (start_line + 1..end_line) |line| {
-                if (line < modified_lines.bit_length and modified_lines.isSet(line)) {
-                    break @intCast(line);
-                }
-            } else null,
-            .modified_ranges => |modified_ranges| blk: {
-                const found = std.sort.binarySearch([2]u32, modified_ranges, [2]u32{ start_line, end_line }, struct {
-                    fn compare(context: [2]u32, range: [2]u32) std.math.Order {
-                        if (context[1] <= range[0]) return .lt;
-                        if (context[0] >= range[1]) return .gt;
-                        return .eq;
-                    }
-                }.compare);
+        switch (self.status) {
+            .new => return start_line + 1,
+            .binary, .deleted, .renamed_to => return null,
+            .modified_lines => |modified_lines| {
+                if (start_line >= modified_lines.bit_length) return null;
 
-                break :blk if (found) |index| modified_ranges[index][0] else null;
+                if (modified_lines.isSet(start_line)) {
+                    if (start_line + 1 < modified_lines.bit_length and
+                        modified_lines.isSet(start_line + 1))
+                    {
+                        return start_line;
+                    }
+                    return null;
+                }
+
+                for (start_line + 1..@min(end_line, modified_lines.bit_length)) |line| {
+                    if (modified_lines.isSet(line)) {
+                        return @intCast(line);
+                    }
+                }
+
+                if (end_line < modified_lines.bit_length and modified_lines.isSet(end_line)) {
+                    // The line was modified, but is not in the inner range.
+                    return null;
+                }
+
+                return null;
             },
-        };
+            .modified_ranges => |modified_ranges| {
+                const range_index = std.sort.binarySearch(
+                    [2]u32,
+                    modified_ranges,
+                    [2]u32{ start_line, end_line },
+                    struct {
+                        fn compare(context: [2]u32, range: [2]u32) std.math.Order {
+                            if (context[1] < range[0]) return .lt;
+                            if (context[0] > range[1]) return .gt;
+                            return .eq;
+                        }
+                    }.compare,
+                ) orelse return null;
+
+                const range_start, const range_end = modified_ranges[range_index];
+
+                if (start_line + 1 >= range_start and start_line + 1 <= range_end) {
+                    return @max(start_line, range_start);
+                }
+
+                return null;
+            },
+        }
+    }
+
+    pub fn format(self: *const File, writer: anytype) !void {
+        try writer.print("{s}: ", .{self.path});
+
+        const printRange = struct {
+            fn printRange(w: @TypeOf(writer), first: *bool, a: u32, b: u32) !void {
+                const prefix = if (first.*) "" else ", ";
+
+                if (a == b) {
+                    try w.print("{s}{}", .{ prefix, a });
+                } else {
+                    try w.print("{s}{}-{}", .{ prefix, a, b });
+                }
+                first.* = false;
+            }
+        }.printRange;
+
+        switch (self.status) {
+            .new => try writer.print("new", .{}),
+            .binary => try writer.print("binary", .{}),
+            .deleted => try writer.print("deleted", .{}),
+            .renamed_to => try writer.print("renamed", .{}),
+            .modified_lines => |*bit_set| {
+                var iter = bit_set.iterator(.{});
+                var range_start: u32 = @intCast(iter.next().?); // `modified_lines` implies at least one modification.
+                var range_end: u32 = @intCast(range_start);
+
+                try writer.print("modified (", .{});
+
+                var is_first = true;
+                while (iter.next()) |bit_usize| {
+                    const bit: u32 = @intCast(bit_usize);
+
+                    if (bit == range_end + 1) {
+                        range_end = bit;
+                        continue;
+                    }
+
+                    try printRange(writer, &is_first, range_start, range_end);
+
+                    range_start = bit;
+                    range_end = bit;
+                }
+
+                try printRange(writer, &is_first, range_start, range_end);
+
+                try writer.print(")", .{});
+            },
+            .modified_ranges => |ranges| {
+                try writer.print("modified (", .{});
+
+                var is_first = true;
+                for (ranges) |range| {
+                    try printRange(writer, &is_first, range[0], range[1]);
+                }
+
+                try writer.print(")", .{});
+            },
+        }
     }
 };
 

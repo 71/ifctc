@@ -282,6 +282,84 @@ test "deleted file" {
     );
 }
 
+test "added in same file" {
+    try expectDiagnostics(
+        &[_]Analysis.File{},
+        \\diff --git a/a b/a
+        \\--- a/a
+        \\+++ b/a
+        \\@@ -1,7 +1,11 @@
+        \\+# LINT.IfChange(lower)
+        \\ a
+        \\ b
+        \\ c
+        \\+# LINT.ThenChange(:upper)
+        \\
+        \\+# LINT.IfChange(upper)
+        \\ A
+        \\ B
+        \\ C
+        \\+# LINT.ThenChange(:lower)
+    ,
+        &[_]Dir.InMemoryFile{
+            .{
+                .path = "a",
+                .contents =
+                \\# LINT.IfChange(lower)
+                \\a
+                \\b
+                \\c
+                \\# LINT.ThenChange(:upper)
+                \\
+                \\# LINT.IfChange(upper)
+                \\A
+                \\B
+                \\C
+                \\# LINT.ThenChange(:lower)
+                ,
+            },
+        },
+    );
+}
+
+test "modified in same file" {
+    try expectDiagnostics(
+        &[_]Analysis.File{},
+        \\diff --git a/a b/a
+        \\--- a/a
+        \\+++ b/a
+        \\@@ -1,4 +1,4 @@
+        \\-# LINT.IfChange(lower)
+        \\+# LINT.IfChange(lower1)
+        \\ a
+        \\ b
+        \\ # LINT.ThenChange(:upper)
+        \\@@ -6,4 +6,4 @@ b
+        \\ # LINT.IfChange(upper)
+        \\ A
+        \\ B
+        \\-# LINT.ThenChange(:lower)
+        \\+# LINT.ThenChange(:lower1)
+    ,
+        &[_]Dir.InMemoryFile{
+            .{
+                .path = "a",
+                .contents =
+                \\# LINT.IfChange(lower1)
+                \\a
+                \\b
+                \\# LINT.ThenChange(:upper)
+                \\
+                \\# LINT.IfChange(upper)
+                \\A
+                \\B
+                \\# LINT.ThenChange(:lower1)
+                ,
+            },
+        },
+    );
+}
+
 // -------------------------------------------------------------------------------------------------
 // MARK: Helpers
 
