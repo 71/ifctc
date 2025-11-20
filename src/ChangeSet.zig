@@ -49,33 +49,18 @@ pub const File = struct {
         }
     }
 
-    /// Finds the number of the first line in `[start_line, end_line]` which was modified, and
-    /// returns it if a line was also modified in `[start_line + 1, end_line - 1]`.
+    /// Finds the number of the first line in `[start_line, end_line]` which was modified.
     pub fn firstModifiedLineIn(self: *const File, start_line: u32, end_line: u32) ?u32 {
         switch (self.status) {
-            .new => return start_line + 1,
+            .new => return start_line,
             .binary, .deleted, .renamed_to => return null,
             .modified_lines => |modified_lines| {
                 if (start_line >= modified_lines.bit_length) return null;
 
-                if (modified_lines.isSet(start_line)) {
-                    if (start_line + 1 < modified_lines.bit_length and
-                        modified_lines.isSet(start_line + 1))
-                    {
-                        return start_line;
-                    }
-                    return null;
-                }
-
-                for (start_line + 1..@min(end_line, modified_lines.bit_length)) |line| {
+                for (start_line..@min(end_line + 1, modified_lines.bit_length)) |line| {
                     if (modified_lines.isSet(line)) {
                         return @intCast(line);
                     }
-                }
-
-                if (end_line < modified_lines.bit_length and modified_lines.isSet(end_line)) {
-                    // The line was modified, but is not in the inner range.
-                    return null;
                 }
 
                 return null;
@@ -94,13 +79,9 @@ pub const File = struct {
                     }.compare,
                 ) orelse return null;
 
-                const range_start, const range_end = modified_ranges[range_index];
+                const range_start = modified_ranges[range_index][0];
 
-                if (start_line + 1 >= range_start and start_line + 1 <= range_end) {
-                    return @max(start_line, range_start);
-                }
-
-                return null;
+                return @max(start_line, range_start);
             },
         }
     }

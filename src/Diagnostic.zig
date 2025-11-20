@@ -19,6 +19,7 @@ pub const Details = union(enum) {
     },
     if_change_without_then_change,
     then_change_without_if_change,
+    if_change_and_then_change_on_same_line,
 
     // Invalid directive contents.
     self_file,
@@ -106,6 +107,7 @@ fn copyDetails(self: *const Diagnostic, allocator: std.mem.Allocator) error{OutO
         .then_change_follows_then_change,
         .if_change_without_then_change,
         .then_change_without_if_change,
+        .if_change_and_then_change_on_same_line,
         .self_file,
         .file_deleted,
         .file_renamed_but_not_modified,
@@ -168,6 +170,9 @@ fn printDetails(
         },
         .then_change_without_if_change => {
             try writer.print("LINT.ThenChange does not follow LINT.IfChange", .{});
+        },
+        .if_change_and_then_change_on_same_line => {
+            try writer.print("LINT.ThenChange may not be on the same line as LINT.IfChange", .{});
         },
 
         .self_file => {

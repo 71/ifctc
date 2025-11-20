@@ -306,7 +306,7 @@ const Worker = struct {
                     });
                     self.last_directive = .{ .then_change_line = directive.start_line };
                 } else {
-                    self.last_directive = .{ .if_change_line = line };
+                    self.last_directive = .{ .if_change_line = directive.start_line };
                     try self.setIfChangeLabel(directive.start_line, directive.args);
                 },
             }
@@ -320,7 +320,20 @@ const Worker = struct {
         end_line: u32,
         directive: *const DirectiveParser.ParsedDirective,
     ) error{OutOfMemory}!void {
-        const modified_line = self.file.change.firstModifiedLineIn(start_line, end_line);
+        if (start_line == end_line) {
+            @branchHint(.unlikely);
+
+            return self.addDiagnostic(start_line, .if_change_and_then_change_on_same_line);
+        }
+
+        std.debug.assert(start_line < end_line);
+
+        if (start_line == end_line - 1) {
+            // Nothing may have changed in an empty range.
+            return;
+        }
+
+        const modified_line = self.file.change.firstModifiedLineIn(start_line + 1, end_line - 1);
 
         const label = self.if_change_label.items;
         defer self.if_change_label.clearRetainingCapacity();

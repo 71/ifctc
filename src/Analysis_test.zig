@@ -360,6 +360,41 @@ test "modified in same file" {
     );
 }
 
+test "same line" {
+    try expectDiagnostics(
+        &[_]Analysis.File{
+            .{
+                .path = "a",
+                .diagnostics = &[_]Diagnostic{
+                    .{
+                        .line = 1,
+                        .details = .if_change_and_then_change_on_same_line,
+                    },
+                },
+            },
+        },
+        \\diff --git a/a b/a
+        \\--- a/a
+        \\+++ b/a
+        \\@@ -1 +1 @@
+        \\-
+        \\+# LINT.IfChange  LINT.ThenChange(b)
+    ,
+        &[_]Dir.InMemoryFile{
+            .{
+                .path = "a",
+                .contents =
+                \\# LINT.IfChange  LINT.ThenChange(b)
+                ,
+            },
+            .{
+                .path = "b",
+                .contents = "",
+            },
+        },
+    );
+}
+
 // -------------------------------------------------------------------------------------------------
 // MARK: Helpers
 
