@@ -244,7 +244,7 @@ const Worker = struct {
             if (read == 0) break;
 
             // Process the buffer.
-            expect_more = try self.analyzeBuffer(&parser, &buffer);
+            expect_more = try self.analyzeBuffer(&parser, buffer[0..read]);
         }
 
         if (expect_more) {
