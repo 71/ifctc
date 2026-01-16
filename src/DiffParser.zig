@@ -115,7 +115,7 @@ pub fn finish(self: *DiffParser) Error!void {
     }
     switch (self.state) {
         .expect_header => {},
-        .expect_hunk_header => |state| {
+        inline .expect_hunk_header, .expect_old_file_path => |state| {
             if (try self.finishFile(state.file_path)) |file| try self.addFile(file);
             std.debug.assert(self.state == .expect_header);
         },
@@ -123,17 +123,6 @@ pub fn finish(self: *DiffParser) Error!void {
             return self.invalidError("expected more hunk lines");
         },
         .expect_rename => return self.invalidError("expected `rename from` or `rename to` lines"),
-        .expect_old_file_path => |state| {
-            try self.addFile(.{
-                .path = state.file_path,
-                .status = switch (state.status orelse .renamed) {
-                    .new, .renamed => .new,
-                    .deleted => .deleted,
-                },
-            });
-
-            self.state = .expect_header;
-        },
         .expect_new_file_path => return self.invalidError("expected `+++ <filename>`"),
     }
 }
@@ -264,6 +253,8 @@ fn parseLine(self: *DiffParser, line: *[]const u8, is_full_line: bool) Error!?Fi
                 .expect_old_file_path = .{ .file_path = owned_path, .status = null },
             };
             self.skipLine();
+
+            if (result != null) return result;
         },
         .expect_rename => |*state| {
             // Skip over extended header lines.
@@ -367,6 +358,15 @@ fn parseLine(self: *DiffParser, line: *[]const u8, is_full_line: bool) Error!?Fi
                 }
                 self.skipLine();
                 return null;
+            }
+
+            // We could be reading a mode-only change.
+            comptime std.debug.assert("diff --git ".len <= longest_extended_header_line_prefix);
+
+            if (std.mem.startsWith(u8, prefix, "diff --git ")) {
+                result = try self.finishFile(state.file_path);
+                std.debug.assert(self.state == .expect_header);
+                continue :sw self.state;
             }
 
             // Expect `--- a/path`.
@@ -730,6 +730,18 @@ fn finishFile(self: *DiffParser, owned_file_path: []const u8) Error!?File {
         // No changes in this file. This happens for instance if the file was only renamed or
         // its mode changed. In this case we don't consider that the file was modified, and just
         // skip it.
+        switch (self.state) {
+            .expect_old_file_path => |state| if (state.status) |status| {
+                return .{
+                    .path = owned_file_path,
+                    .status = switch (status) {
+                        .new, .renamed => .new,
+                        .deleted => .deleted,
+                    },
+                };
+            },
+            else => {},
+        }
         self.change_set.allocator.free(owned_file_path);
 
         const files = self.change_set.files.items;

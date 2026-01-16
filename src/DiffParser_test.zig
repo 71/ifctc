@@ -272,6 +272,18 @@ test "binary files" {
     );
 }
 
+test "mode only" {
+    // We do not create entries for files whose only change is a mode change.
+    try expectDiff(&[_]ChangeSet.File{},
+        \\diff --git a/a b/a
+        \\old mode 100755
+        \\new mode 100644
+        \\diff --git a/b b/b
+        \\old mode 100755
+        \\new mode 100644
+    );
+}
+
 test "test.patch" {
     // To debug the parser on specific files, add a new `test.patch` file at the root of the
     // repository and run this test.
