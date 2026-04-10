@@ -78,6 +78,48 @@ test "empty new file" {
     );
 }
 
+test "empty to non-empty" {
+    try expectDiff(&[_]ChangeSet.File{
+        .{
+            .path = "a",
+            .status = .{
+                .modified_ranges = &[_][2]u32{
+                    .{ 1, 2 },
+                },
+            },
+        },
+    },
+        \\diff --git a/a b/a
+        \\index e69de29..7898192 100644
+        \\--- a/a
+        \\+++ b/a
+        \\@@ -0,0 +1,2 @@
+        \\+a
+        \\+a
+    );
+}
+
+test "non-empty to empty" {
+    try expectDiff(&[_]ChangeSet.File{
+        .{
+            .path = "a",
+            .status = .{
+                .modified_ranges = &[_][2]u32{
+                    .{ 0, 0 },
+                },
+            },
+        },
+    },
+        \\diff --git a/a b/a
+        \\index 7e8a165..e69de29 100644
+        \\--- a/a
+        \\+++ b/a
+        \\@@ -1,2 +0,0 @@
+        \\-a
+        \\-a
+    );
+}
+
 test "deleted file" {
     try expectDiff(&[_]ChangeSet.File{
         .{

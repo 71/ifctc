@@ -529,21 +529,35 @@ fn parseLine(self: *DiffParser, line: *[]const u8, is_full_line: bool) Error!?Fi
                     // Both must be 0.
                     return self.invalidErrorConcat(&[_][]const u8{ "invalid hunk header: ", full_line });
                 }
-                if (state.expect != .new) {
-                    return self.invalidErrorConcat(&[_][]const u8{
-                        "hunk header with -0,0 must be for a new file: ",
-                        state.file_path,
-                    });
-                }
 
-                // This is a file addition.
-                self.state = .{
-                    .in_new_file_hunk = .{
-                        .file_path = state.file_path,
-                        .remaining_added_lines = hunk_header.new_lines,
+                switch (state.expect) {
+                    .new => {
+                        // This is a file addition.
+                        self.state = .{
+                            .in_new_file_hunk = .{
+                                .file_path = state.file_path,
+                                .remaining_added_lines = hunk_header.new_lines,
+                            },
+                        };
+                        return null;
                     },
-                };
-                return null;
+                    .modified_after_line => |after_line| {
+                        if (after_line != 0) {
+                            return self.invalidErrorConcat(&[_][]const u8{
+                                "hunk header with -0,0 must be for a new or empty file: ",
+                                state.file_path,
+                            });
+                        }
+
+                        // This is a modification of an empty file.
+                    },
+                    .deleted => {
+                        return self.invalidErrorConcat(&[_][]const u8{
+                            "hunk header with -0,0 must be for a new or empty file: ",
+                            state.file_path,
+                        });
+                    },
+                }
             }
 
             // Checking this _after_ the above `if` lets us accept empty new files.
@@ -551,21 +565,35 @@ fn parseLine(self: *DiffParser, line: *[]const u8, is_full_line: bool) Error!?Fi
                 if (hunk_header.new_start != 0 or hunk_header.new_lines != 0) {
                     return self.invalidErrorConcat(&[_][]const u8{ "invalid hunk header: ", full_line });
                 }
-                if (state.expect != .deleted) {
-                    return self.invalidErrorConcat(&[_][]const u8{
-                        "hunk header with +0,0 must be for a deleted file: ",
-                        state.file_path,
-                    });
-                }
 
-                // This is a file deletion.
-                self.state = .{
-                    .in_deleted_file_hunk = .{
-                        .file_path = state.file_path,
-                        .remaining_removed_lines = hunk_header.old_lines,
+                switch (state.expect) {
+                    .deleted => {
+                        // This is a file deletion.
+                        self.state = .{
+                            .in_deleted_file_hunk = .{
+                                .file_path = state.file_path,
+                                .remaining_removed_lines = hunk_header.old_lines,
+                            },
+                        };
+                        return null;
                     },
-                };
-                return null;
+                    .modified_after_line => |after_line| {
+                        if (after_line != 0) {
+                            return self.invalidErrorConcat(&[_][]const u8{
+                                "hunk header with +0,0 must be for a deleted or emptied file: ",
+                                state.file_path,
+                            });
+                        }
+
+                        // This is a modification to an empty file.
+                    },
+                    .new => {
+                        return self.invalidErrorConcat(&[_][]const u8{
+                            "hunk header with +0,0 must be for a deleted or emptied file: ",
+                            state.file_path,
+                        });
+                    },
+                }
             }
 
             const after_line = switch (state.expect) {
