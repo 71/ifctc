@@ -300,12 +300,11 @@ fn findLintDirectiveStart(self: *DirectiveParser, buffer: []const u8) ?usize {
         if (lint_start == 0 or !isAcceptedWhitespace(buf[lint_start - 1])) {
             @branchHint(.unlikely);
 
-            // The "LINT" does not follow whitespace. Keep going. Skip 5 since "LINT" may not
-            // start directly after "LINT".
+            // The "LINT" does not follow whitespace. Keep going.
             //
             // `@call(.always_tail)` fails to compile here, so we manually use `continue`:
             // https://github.com/ziglang/zig/issues/18189.
-            buf = buf[lint_start + 5 ..];
+            buf = buf[lint_start + 4 ..];
 
             continue;
         }
