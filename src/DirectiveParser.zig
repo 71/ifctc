@@ -184,7 +184,6 @@ pub fn next(self: *DirectiveParser, buf: *[]const u8) Error!?ParsedDirective {
                     @branchHint(.unlikely);
 
                     self.state = .scan;
-                    buf.* = buf.*[1..];
 
                     if (std.ascii.isAlphanumeric(char)) {
                         return error.InvalidDirective;
@@ -266,7 +265,13 @@ pub fn next(self: *DirectiveParser, buf: *[]const u8) Error!?ParsedDirective {
                 break :blk self.line;
             };
 
-            try self.parseDirectiveArgs(buf);
+            self.parseDirectiveArgs(buf) catch |err| {
+                if (err != error.WantMore) {
+                    self.state = .scan;
+                    self.current_directive_arg.clearRetainingCapacity();
+                }
+                return err;
+            };
 
             // We parsed all arguments.
             std.debug.assert(self.current_directive_arg.items.len == 0);
@@ -318,7 +323,7 @@ fn findLintDirectiveStart(self: *DirectiveParser, buffer: []const u8) ?usize {
         }
         if (buf[lint_start + 4] != '.') {
             // The "LINT" is not followed by a dot. Keep going.
-            buf = buf[lint_start + 5 ..];
+            buf = buf[lint_start + 4 ..];
             continue;
         }
 
@@ -330,7 +335,7 @@ fn findLintDirectiveStart(self: *DirectiveParser, buffer: []const u8) ?usize {
     if (buffer.len == 0) return null;
 
     // No lint directive in this chunk. Count newlines and keep going.
-    self.line += @intCast(strings.countNewlines(buffer));
+    self.line += @intCast(strings.countNewlines(buf));
 
     // Although this chunk doesn't contain `LINT`, it might end with a partial `LINT`.
     const offset: u8 = switch (buffer[buffer.len - 1]) {
@@ -362,6 +367,10 @@ fn parseDirectiveArgs(self: *DirectiveParser, buf: *[]const u8) Error!void {
         const read = buf.*[0..arg_end];
         const char = buf.*[arg_end];
 
+        if (char == '\n' and self.current_directive_arg.items.len != 0) {
+            return error.InvalidDirective;
+        }
+
         buf.* = buf.*[arg_end + 1 ..];
 
         switch (char) {
@@ -375,11 +384,6 @@ fn parseDirectiveArgs(self: *DirectiveParser, buf: *[]const u8) Error!void {
                 try self.finishDirectiveArg(.not_last);
             },
             '\n' => {
-                // Newline must follow a comma or opening parenthesis, i.e. the current argument must be
-                // empty.
-                if (self.current_directive_arg.items.len != 0) {
-                    return error.InvalidDirective;
-                }
                 self.line += 1;
             },
             else => unreachable,
